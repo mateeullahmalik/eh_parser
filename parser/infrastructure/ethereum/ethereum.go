@@ -18,25 +18,46 @@ func NewEthereumBlockchain(client ethereum.Client) *EthereumBlockchain {
 }
 
 func (e *EthereumBlockchain) GetBlockCount(ctx context.Context) (int32, error) {
-	return e.client.GetBlockCount(ctx)
+	return e.client.GetLatestBlockNumber(ctx)
 }
 
-func (e *EthereumBlockchain) GetTransactionsByAddress(ctx context.Context, address string, block int32) (txns domain.Transactions, err error) {
-	transactions, err := e.client.GetTransactionsByAddress(ctx, address, block)
+func (e *EthereumBlockchain) GetTransactionsWithAddressesFilter(ctx context.Context, block int32, addresses ...string) (txns domain.Transactions, err error) {
+	transactions, err := e.client.GetBlockTransactions(ctx, block)
 	if err != nil {
 		return txns, err
 	}
 
-	txns = make(domain.Transactions, 0, len(transactions))
+	txnsMap := make(map[string]domain.Transactions)
+	for _, addr := range addresses {
+		txnsMap[addr] = domain.Transactions{}
+	}
+
+	count := 0
 	for _, tx := range transactions {
-		txns = append(txns, domain.Transaction{
-			TxID:   tx.TxID,
-			Amount: tx.Amount,
-			From:   tx.From,
-			To:     tx.To,
-			Fee:    tx.Fee,
-			Block:  tx.Block,
-		})
+		_, fromExists := txnsMap[tx.From]
+		_, toExists := txnsMap[tx.To]
+
+		if fromExists || toExists {
+			count++
+			txnsMap[tx.From] = append(txnsMap[tx.From], domain.Transaction{
+				TxID:     tx.Hash,
+				Gas:      tx.Gas,
+				From:     tx.From,
+				To:       tx.To,
+				GasPrice: tx.GasPrice,
+				Value:    tx.Value,
+				Block:    block,
+			})
+		}
+	}
+
+	txns = make(domain.Transactions, count)
+	i := 0
+	for _, tx := range txnsMap {
+		for _, t := range tx {
+			txns[i] = t
+			i++
+		}
 	}
 
 	return txns, nil
